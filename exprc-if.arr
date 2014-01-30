@@ -1,7 +1,7 @@
 #lang pyret/check
 
 # exprc.arr - simple interpreter for arithmetic and numeric if expressions
-# Copyright 2014 - Humberto Ortiz-Zuazaga <humberto.ortiz@upr.edu>
+# Copyright (C) 2014 - Humberto Ortiz-Zuazaga <humberto.ortiz@upr.edu>
 
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
