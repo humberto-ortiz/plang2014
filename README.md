@@ -2,6 +2,11 @@
 
 Example programs for CCOM 4029.
 
+## Substituting interpeter example.
+
+We discussed the substituting interpeter from Section 15.1 in
+class. The source code is in the `exprc-fun.arr` file.
+
 ## Conditional statement example.
 
 Here's some sample code for an interpreter (and parser) to handle
