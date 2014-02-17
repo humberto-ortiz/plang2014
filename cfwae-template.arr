@@ -18,7 +18,7 @@
 
 # Bindings map identifiers to values
 data Binding:
-  | bind (name :: String, expr :: CFWAE)
+  | bind (name :: String, value :: CFWAE-Value)
 end
 
 # An Environment is a List<Binding>
