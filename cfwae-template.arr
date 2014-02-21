@@ -16,12 +16,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# Bindings map identifiers to values
+# Bindings map identifiers to expressions
 data Binding:
-  | bind (name :: String, value :: CFWAE-Value)
+  | bind (name :: String, expr :: CFWAE)
 end
 
-# An Environment is a List<Binding>
+# An Environment is a List<Env>
+data Env:
+  | env (name :: String, value :: CFWAE-Value)
+end
+
 mt-env = []
 xtnd-env = link
 
@@ -40,26 +44,26 @@ end
 # and values
 data CFWAE-Value:
   | numV (n :: Number)
-  | closV (f :: CFWAE, e :: List<Binding>) # ExprC must be an fdC
+  | closV (f :: CFWAE, e :: List<Env>) # ExprC must be an fdC
 end
               
 fun parse(s) -> CFWAE:
   doc: "Parse reads an s-expression S and returns the abstract syntax tree."
   numC(0)
 where:
-  parse("3") is numC(3)
+  parse(read-sexpr("3")) is numC(3)
 end
 
 fun interp(e :: CFWAE) -> CFWAE-Value:
   doc: "Execute the expression E, return the result of evaluation."
   numV(0)
 where:
-  interp(if0C(numC(0), numC(1), numC(2))) is numV(2)
-  interp(if0C(numC(1), numC(3), numC(2))) is numV(3)
+  interp(if0C(numC(0), numC(1), numC(2))) is numV(1)
+  interp(if0C(numC(1), numC(3), numC(2))) is numV(2)
 end
 
 check:
   fun run(s): interp(parse(read-sexpr(s))) end
-  run("(if0 0 1 2)") is numV(2)
-  run("(if0 1 2 3)") is numV(2)
+  run("(if0 0 1 2)") is numV(1)
+  run("(if0 1 2 3)") is numV(3)
 end
