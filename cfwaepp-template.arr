@@ -90,8 +90,34 @@ end
 
 fun desugar(e :: ExprP) -> ExprC:
   doc: "Desugar the expression E, return the equivalent in the core language."
-  NumC(0)
+  cases (ExprP) e:
+    | NumP(n) => NumC(n)
+    | TrueP => TrueC
+    | WhileP(test, body) =>
+      dummy-fun = FuncC([], ErrorC(StrC("Dummy function")))
+      IfC( desugar(test),
+       # while-var will hold the actual function once we tie
+       # everything together
+       LetC( "while-var", dummy-fun,
+         LetC( "while-func", 
+           # this function does the real work - it runs the body of
+           # the while loop, then re-runs it if the test is true, and
+           # stops if its false
+            FuncC([],
+              LetC("temp-var",
+                desugar( body),
+               IfC(desugar( test),
+                  AppC(IdC( "while-var"), []),
+                  IdC( "temp-var")))),
+           # The SetC here makes sure that 'while-var will resolve
+           # to the right value later, and the AppC kicks things off
+           SeqC(SetC( "while-var", IdC( "while-func")),
+              AppC(IdC("while-var"), [])))),
+       FalseC)
+  end
 where:
   desugar(NumP(0)) is NumC(0)
+  desugar(WhileP(TrueP, NumP(1))) is IfC(TrueC, LetC("while-var", FuncC([], ErrorC(StrC("Dummy function"))), LetC("while-func", FuncC([], LetC("temp-var", NumC(1), IfC(TrueC, AppC(IdC("while-var"), []), IdC("temp-var")))), SeqC(SetC("while-var", IdC("while-func")), AppC(IdC("while-var"), [])))), FalseC)
 end
+
 
