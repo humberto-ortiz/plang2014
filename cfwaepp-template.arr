@@ -80,12 +80,209 @@ data ExprC:
   | Prim2C (op :: String, arg1 :: ExprC, arg2 :: ExprC)
 end
 
+binops = ["+", "-", "==", "<", ">"]
+keywords = ['if', 'fun', 'true', 'false', 'defvar', 'deffun', 'obj', 'getfield', 'setfield', 'setvar', 'begin', 'while', 'print', 'for']
+
+
+fun parse-formals(s, illegals) -> List<String>:
+  doc: "Read a list of identifiers S and construct a list of Strings"
+  if List(s):
+    cases (List) s:
+      | empty => empty
+      | link(first, rest) =>
+        if illegals.member(first):
+          raise("parse-formals: formal arguments must be named uniquely")
+        else:
+          link(first, parse-formals(rest, link(first, illegals)))
+        end
+    end
+  else:
+    raise("parse-formals: illegal formal arguments")
+  end
+where:
+  parse-formals(["x", "y"], keywords) is ["x", "y"]
+end
+
+fun parse-fields(lof) -> List<FieldP>:
+  for map(field from lof):
+    name = field.first
+    val = parse(list.index(field, 1))
+    fieldP(name, val)
+  end
+end
 
 fun parse(s) -> ExprP:
   doc: "Parse reads an s-expression S and returns the abstract syntax tree."
-  NumP(0)
+  if Number(s):
+    # num
+    NumP(s)
+  else if String(s):
+    # true
+    if s == "true":
+      TrueP
+    # false
+    else if s == "false":
+      FalseP
+    # id
+    else:
+      IdP(s)
+    end
+  else if List(s):
+    cases (List) s:
+      | empty => raise("parse: empty sexpr")
+      | link(op, r) =>
+        len = r.length()
+        # while
+        if "while" == op:
+          if len == 2:
+            t = parse(list.index(r, 0))
+            b = parse(list.index(r, 1))
+            WhileP(t, b)
+          else:
+            raise("parse: malformed while" + s)
+          end
+        # string
+        else if "string" == op:
+          if len == 1:
+            StrP(r.first)
+          else:
+            raise("parse: malformed string" + r)
+          end
+        # + - == < >
+        else if binops.member(op):
+          if len == 2:
+            PrimP(op, [parse(list.index(r, 0)), parse(list.index(r, 1))])
+          else:
+            raise("parse: binary operations require two arguments")
+          end
+        # print
+        else if "print" == op:
+          if len == 1:
+            PrimP(op, [parse(r.first)])
+          else:
+            raise("parse: print requires a single argument")
+          end
+        # if
+        else if "if" == op:
+          if len == 3:
+            cond = parse(list.index(r, 0))
+            then = parse(list.index(r, 1))
+            esle = parse(list.index(r, 2))
+            IfP(cond, then, esle)
+          else:
+            raise("parse: malformed if expression")
+          end
+        # begin
+        else if "begin" == op:
+          es = for map(e from r):
+            parse(e)
+          end
+          SeqP(es)
+        # defvar
+        else if "defvar" == op:
+          if len == 3:
+            id = list.index(r, 0)
+            val = parse(list.index(r, 1))
+            bod = parse(list.index(r, 2))
+            DefvarP(id, val, bod)
+          else:
+            raise("parse: malformed defvar")
+          end
+        # setvar
+        else if "setvar" == op:
+          if len == 2:
+            id = list.index(r, 0)
+            val = parse(list.index(r, 1))
+            SetvarP(id, val)
+          else:
+            raise("parse: malformed setvar")
+          end
+        # for
+        else if "for" == op:
+          if len == 4:
+            args = for map(arg from r):
+              parse(arg)
+            end
+            init = list.index(args, 0)
+            test = list.index(args, 1)
+            update = list.index(args,2)
+            body = list.index(args, 3)
+            ForP(init, test, update, body)
+          else:
+            raise("parse: malformed for " + torepr(s))
+          end
+          # fun
+        else if "fun" == op:
+          if len == 2:
+            formals = parse-formals(list.index(r, 0), keywords)
+            body = parse(list.index(r, 1))
+            FuncP(formals, body)
+          else:
+            raise("parse: malformed function definition")
+          end
+          # obj
+        else if "obj" == op:
+          if len == 1:
+            ObjectP(parse-fields(r.first))
+          else:
+            raise("parse: malformed object" + torepr(s))
+          end
+          # getfield
+        else if "getfield" == op:
+          if len == 2:
+            obj = parse(list.index(r, 0))
+            field = parse(list.index(r, 1))
+            GetfieldP(obj, field)
+          else:
+            raise("parse: malformed getfield" + torepr(s))
+          end
+          # setfield
+        else if "setfield" == op:
+          if len == 3:
+            obj = parse(list.index(r, 0))
+            field = parse(list.index(r, 1))
+            val = parse(list.index(r, 2))
+            SetfieldP(obj, field, val)
+          else:
+            raise("parse: malformed setfield" + torepr(s))
+          end
+          # deffun
+        else if "deffun" == op:
+          if len == 3:
+            ids = list.index(r, 0)
+            funbody = parse(list.index(r, 1))
+            body = parse(list.index(r, 2))
+            DeffunP(ids.first, ids.rest, funbody, body)
+          else:
+            raise("parse: malformed fun " + torepr(s))
+          end
+        else:
+          # app
+          AppP(parse(s.first), map(parse, s.rest))
+        end
+    end
+  else:
+    raise("parse: unknown expression " + torepr(s))
+  end
 where:
-  parse(read-sexpr("3")) is NumP(3)
+  fun p(s): parse(read-sexpr(s)) end 
+  p("3") is NumP(3)
+  p("(while true 5)") is WhileP(TrueP, NumP(5))
+  p("(for (setvar x 0) (< x 10) (setvar x (+ x 1)) 
+    (print x))") is ForP(SetvarP("x", NumP(0)), PrimP("<", [IdP("x"), NumP(10)]), SetvarP("x", PrimP("+", [IdP("x"), NumP(1)])), PrimP("print", [IdP("x")]))
+  p('"hello"') is StrP("hello")
+  p("(print (+ 2 3))") is PrimP("print", [PrimP("+", [NumP(2), NumP(3)])])
+  p("(if true 1 2)") is IfP(TrueP, NumP(1), NumP(2))
+  p("(begin 1 2 3)") is SeqP([NumP(1), NumP(2), NumP(3)])
+  p("(defvar x 1 x)") is DefvarP('x', NumP(1), IdP('x'))
+  p("(setvar x 2)") is SetvarP('x', NumP(2))
+  p("(for 0 true 1 2)") is ForP(NumP(0), TrueP, NumP(1), NumP(2))
+  p("(fun (x) x)") is FuncP(['x'], IdP("x"))
+  p("(obj ((x 1) (f (fun (x) x))))") is ObjectP([fieldP("x", NumP(1)), fieldP("f", FuncP(['x'], IdP("x")))])
+  p('(getfield o "x")') is GetfieldP(IdP('o'), StrP('x'))
+  p('(setfield o "x" 2)') is SetfieldP(IdP('o'), StrP('x'), NumP(2))
+  p("(deffun (id x) x 3)") is DeffunP("id", ["x"], IdP('x'), NumP(3)) 
+  p("(deffun (id x) x (id 3))") is DeffunP("id", ["x"], IdP('x'), AppP(IdP("id"), [NumP(3)])) 
 end
 
 fun desugar(e :: ExprP) -> ExprC:
@@ -116,8 +313,9 @@ fun desugar(e :: ExprP) -> ExprC:
        FalseC)
   end
 where:
-  desugar(NumP(0)) is NumC(0)
-  desugar(WhileP(TrueP, NumP(1))) is IfC(TrueC, LetC("while-var", FuncC([], ErrorC(StrC("Dummy function"))), LetC("while-func", FuncC([], LetC("temp-var", NumC(1), IfC(TrueC, AppC(IdC("while-var"), []), IdC("temp-var")))), SeqC(SetC("while-var", IdC("while-func")), AppC(IdC("while-var"), [])))), FalseC)
+  fun run(s): desugar(parse(read-sexpr(s))) end
+  run("0") is NumC(0)
+  run("(while true 1)") is IfC(TrueC, LetC("while-var", FuncC([], ErrorC(StrC("Dummy function"))), LetC("while-func", FuncC([], LetC("temp-var", NumC(1), IfC(TrueC, AppC(IdC("while-var"), []), IdC("temp-var")))), SeqC(SetC("while-var", IdC("while-func")), AppC(IdC("while-var"), [])))), FalseC)
 end
 
 
