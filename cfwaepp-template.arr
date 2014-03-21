@@ -270,6 +270,9 @@ where:
   p("(while true 5)") is WhileP(TrueP, NumP(5))
   p("(for (setvar x 0) (< x 10) (setvar x (+ x 1)) 
     (print x))") is ForP(SetvarP("x", NumP(0)), PrimP("<", [IdP("x"), NumP(10)]), SetvarP("x", PrimP("+", [IdP("x"), NumP(1)])), PrimP("print", [IdP("x")]))
+  # NOTE: strings must be enclosed in double quotes
+  # You can put them inside single quotes, or escape them
+  p("\"hello\"") is StrP("hello")
   p('"hello"') is StrP("hello")
   p("(print (+ 2 3))") is PrimP("print", [PrimP("+", [NumP(2), NumP(3)])])
   p("(if true 1 2)") is IfP(TrueP, NumP(1), NumP(2))
