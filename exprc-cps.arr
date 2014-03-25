@@ -1,6 +1,8 @@
 #lang pyret/check
 
-# exprc.arr - simple interpreter for arithmetic and functions expressions
+# exprc-cps.arr - simple interpreter for arithmetic and functions expressions
+# Added contunuation passing style via desugaring.
+
 # Copyright (C) 2014 - Humberto Ortiz-Zuazaga <humberto.ortiz@upr.edu>
 
 # This program is free software: you can redistribute it and/or modify
