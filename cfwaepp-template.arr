@@ -80,6 +80,55 @@ data ExprC:
   | Prim2C (op :: String, arg1 :: ExprC, arg2 :: ExprC)
 end
 
+# Environments and Values
+data Binding:
+  | bind (name :: String, value :: Number)
+end
+
+# Environments are lists of bindings
+mt-env = []
+xtnd-env = link
+
+data FieldV:
+  | fieldV (name :: String, value :: ValueC)
+end
+
+data ValueC:
+  | TrueV
+  | FalseV
+  | NumV (n :: Number)
+  | StrV (s :: String)
+  | ClosureV (args :: List<String>, body :: ExprC, env :: List<Binding>)
+  | ObjectV (fields :: List<FieldV>)
+end
+
+fun pretty-value(v :: ValueC) -> String:
+  cases (ValueC) v:
+    | ObjectV(_) => "object"
+    | ClosureV(_, _, _) => "function"
+    | NumV(n) => torepr(n)
+    | StrV(s) => s
+    | TrueV => "true"
+    | FalseV => "false"
+  end
+end
+
+# helper function for errors
+interp-error = raise
+
+# The store maps locations to values
+data Cell:
+  | cell (location :: Number, value :: ValueC)
+end
+
+# The store is a list of cells
+mt-sto = []
+xtnd-sto = link
+
+data Result:
+  | v-x-s (value :: ValueC, store :: List<Cell>)
+end
+
 binops = ["+", "-", "==", "<", ">"]
 keywords = ['if', 'fun', 'true', 'false', 'defvar', 'deffun', 'obj', 'getfield', 'setfield', 'setvar', 'begin', 'while', 'print', 'for']
 
@@ -288,11 +337,50 @@ where:
   p("(deffun (id x) x (id 3))") is DeffunP("id", ["x"], IdP('x'), AppP(IdP("id"), [NumP(3)])) 
 end
 
+# Humberto's desugar
+fun desugar-fields(fields :: List<FieldP>) -> List<FieldC>:
+  for map(field from fields):
+    name = field.name
+    val = desugar(field.value)
+    fieldC(name, val)
+  end
+end
+
+fun desugar-begin(es :: List<ExprP>) -> ExprC:
+  len = es.length()
+  if len == 0:
+    ErrorC(StrC("empty sequence of expressions"))
+  else if len == 1:
+    desugar(es.first)
+  else if len == 2:
+    SeqC(desugar(list.index(es, 0)), desugar(list.index(es, 1)))
+  else:
+    SeqC(desugar(es.first), desugar-begin(es.rest))
+  end
+end
+
 fun desugar(e :: ExprP) -> ExprC:
   doc: "Desugar the expression E, return the equivalent in the core language."
   cases (ExprP) e:
-    | NumP(n) => NumC(n)
     | TrueP => TrueC
+    | FalseP => FalseC
+    | NumP(n) => NumC(n)
+    | StrP(s) => StrC(s)
+    | IdP(name) => IdC(name)
+    | IfP(tst, thn, els) => IfC(desugar(tst), desugar(thn), desugar(els))
+    | FuncP(formals, body) => FuncC(formals, desugar(body))
+    | AppP(func, actuals) => AppC(desugar(func), map(desugar, actuals))
+    | ObjectP(fields) => ObjectC(desugar-fields(fields))
+    | GetfieldP(o, f) => GetFieldC(desugar(o), desugar(f))
+    | SetfieldP(o, f, v) => SetFieldC(desugar(o), desugar(f), desugar(v))
+    | DefvarP(id, val, body) => LetC(id, desugar(val), desugar(body))
+    | SetvarP(id, val) => SetC(id, desugar(val))
+    | DeffunP(n, ids, fb, b) =>
+      dummy-fun = FuncC([], ErrorC(StrC("Dummy function")))
+      LetC(n, dummy-fun,
+        SeqC(SetC(n, FuncC(ids, desugar(fb))),
+          desugar(b)))
+    | SeqP(es) => desugar-begin(es)
     | WhileP(test, body) =>
       dummy-fun = FuncC([], ErrorC(StrC("Dummy function")))
       IfC( desugar(test),
@@ -314,11 +402,91 @@ fun desugar(e :: ExprP) -> ExprC:
            SeqC(SetC( "while-var", IdC( "while-func")),
               AppC(IdC("while-var"), [])))),
        FalseC)
+    | ForP(init, test, update, body) =>
+      dummy-fun = FuncC([], ErrorC(StrC("Dummy function")))
+      LetC("for-init", desugar(init),
+        IfC(desugar(test),
+          # set up recursion
+          LetC("for-var", dummy-fun,
+            LetC("for-fun",
+              FuncC([], 
+                LetC("for-body", desugar(body),
+                  LetC("for-update", desugar(update),
+                    LetC("for-test", desugar(test),
+                      IfC(IdC("for-test"),
+                        AppC(IdC("for-var"), []),
+                        IdC("for-body")))))),
+              SeqC(
+                SetC("for-var", IdC("for-fun")),
+                AppC(IdC("for-var"), [])))),
+          IdC("for-init")))
+    | PrimP(op, args) =>
+      len = args.length()
+      if 1 == len:
+        Prim1C('print', desugar(args.first))
+      else if 2 == len:
+        argL = desugar(list.index(args, 0))
+        argR = desugar(list.index(args, 1))
+        if op == '+':
+        LetC("tag-l", Prim1C('tagof', argL),
+          LetC("tag-r", Prim1C('tagof', argR),
+            IfC(Prim2C("==", IdC("tag-l"), IdC("tag-r")),
+              IfC(Prim2C("==", IdC("tag-l"), StrC("string")),
+                  Prim2C("string+", argL, argR),
+                  Prim2C("num+", argL, argR)),
+                ErrorC(StrC("Bad arguments to +")))))
+        else if op == '-':
+          Prim2C("num-", argL, argR)
+        else:
+          Prim2C(op, argL, argR)
+        end
+      else:
+        ErrorC(StrC("Bad primop"))
+      end
   end
 where:
   fun run(s): desugar(parse(read-sexpr(s))) end
+  run("true") is TrueC
+  run("false") is FalseC
   run("0") is NumC(0)
+  run('"Hello, World!"') is StrC("Hello, World!")
+  run("x") is IdC("x")
+  run("(fun (x) x)") is FuncC(["x"], IdC("x"))
+  run("((fun (x) x) 5)") is AppC(FuncC(["x"], IdC("x")), [NumC(5)])
+  run("(if true 1 0)") is IfC(TrueC, NumC(1), NumC(0))
+  run("(obj ((x 5)))") is ObjectC([fieldC("x", NumC(5))])
+  run('(getfield (obj ((x 5))) "x")') is GetFieldC(ObjectC([fieldC("x", NumC(5))]), StrC("x"))
+  run("(setvar x 2)") is SetC("x", NumC(2))
+  run("(deffun (id x) x (id 3))") is
+  LetC("id",  FuncC([], ErrorC(StrC("Dummy function"))),
+    SeqC(SetC("id", FuncC(["x"], IdC("x"))),
+      AppC(IdC("id"), [NumC(3)]) ))
+  run("(begin 1 2)") is SeqC(NumC(1), NumC(2))
+  run("(begin 1 2 3)") is SeqC(NumC(1), SeqC(NumC(2), NumC(3)))
   run("(while true 1)") is IfC(TrueC, LetC("while-var", FuncC([], ErrorC(StrC("Dummy function"))), LetC("while-func", FuncC([], LetC("temp-var", NumC(1), IfC(TrueC, AppC(IdC("while-var"), []), IdC("temp-var")))), SeqC(SetC("while-var", IdC("while-func")), AppC(IdC("while-var"), [])))), FalseC)
+  run("(defvar x 0 (for (setvar x 0) (< x 10) (setvar x (+ x 1)) 
+  (print x)))") is LetC("x", NumC(0), LetC("for-init", SetC("x", NumC(0)), IfC(Prim2C("<", IdC("x"), NumC(10)), LetC("for-var", FuncC([], ErrorC(StrC("Dummy function"))), LetC("for-fun", FuncC([], LetC("for-body", Prim1C("print", IdC("x")), LetC("for-update", SetC("x", LetC("tag-l", Prim1C("tagof", IdC("x")), LetC("tag-r", Prim1C("tagof", NumC(1)), IfC(Prim2C("==", IdC("tag-l"), IdC("tag-r")), IfC(Prim2C("==", IdC("tag-l"), StrC("string")), Prim2C("string+", IdC("x"), NumC(1)), Prim2C("num+", IdC("x"), NumC(1))), ErrorC(StrC("Bad arguments to +")))))), LetC("for-test", Prim2C("<", IdC("x"), NumC(10)), IfC(IdC("for-test"), AppC(IdC("for-var"), []), IdC("for-body")))))), SeqC(SetC("for-var", IdC("for-fun")), AppC(IdC("for-var"), [])))), IdC("for-init"))))
+  run("(for a b c d)") is LetC("for-init", IdC("a"), IfC(IdC("b"), LetC("for-var", FuncC([], ErrorC(StrC("Dummy function"))), LetC("for-fun", FuncC([], LetC("for-body", IdC("d"), LetC("for-update", IdC("c"), LetC("for-test", IdC("b"), IfC(IdC("for-test"), AppC(IdC("for-var"), []), IdC("for-body")))))), SeqC(SetC("for-var", IdC("for-fun")), AppC(IdC("for-var"), [])))), IdC("for-init")))
+  # The primops
+  desugar(PrimP("<", [IdP("x"), NumP(10)])) is Prim2C("<", IdC("x"), NumC(10))
 end
 
 
+# Templates for interpreter: fix interp-full
+
+fun interp-full (expr :: ExprC, env :: List<Binding>, store :: List<Cell>) -> Result:
+  cases (ExprC) expr:
+    | NumC (n) => v-x-s(NumV(n), store)
+    | else => interp-error("Haven't covered a case yet:".append(torepr(expr)))
+  end
+end
+
+fun interp(expr :: ExprC) -> ValueC:
+  cases (Result) interp-full(expr, mt-env, mt-sto):
+    | v-x-s (value, store) => value
+  end
+end
+
+check:
+  interp(NumC(5)) is NumV(5)
+end
