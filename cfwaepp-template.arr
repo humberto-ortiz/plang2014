@@ -80,6 +80,55 @@ data ExprC:
   | Prim2C (op :: String, arg1 :: ExprC, arg2 :: ExprC)
 end
 
+# Environments and Values
+data Binding:
+  | bind (name :: String, value :: Number)
+end
+
+# Environments are lists of bindings
+mt-env = []
+xtnd-env = link
+
+data FieldV:
+  | fieldV (name :: String, value :: ValueC)
+end
+
+data ValueC:
+  | TrueV
+  | FalseV
+  | NumV (n :: Number)
+  | StrV (s :: String)
+  | ClosureV (args :: List<String>, body :: ExprC, env :: List<Binding>)
+  | ObjectV (fields :: List<FieldV>)
+end
+
+fun pretty-value(v :: ValueC) -> String:
+  cases (ValueC) v:
+    | ObjectV(_) => "object"
+    | ClosureV(_, _, _) => "function"
+    | NumV(n) => torepr(n)
+    | StrV(s) => s
+    | TrueV => "true"
+    | FalseV => "false"
+  end
+end
+
+# helper function for errors
+interp-error = raise
+
+# The store maps locations to values
+data Cell:
+  | cell (location :: Number, value :: ValueC)
+end
+
+# The store is a list of cells
+mt-sto = []
+xtnd-sto = link
+
+data Result:
+  | v-x-s (value :: ValueC, store :: List<Cell>)
+end
+
 binops = ["+", "-", "==", "<", ">"]
 keywords = ['if', 'fun', 'true', 'false', 'defvar', 'deffun', 'obj', 'getfield', 'setfield', 'setvar', 'begin', 'while', 'print', 'for']
 
@@ -322,3 +371,21 @@ where:
 end
 
 
+# Templates for interpreter: fix interp-full
+
+fun interp-full (expr :: ExprC, env :: List<Binding>, store :: List<Cell>) -> Result:
+  cases (ExprC) expr:
+    | NumC (n) => v-x-s(NumV(n), store)
+    | else => interp-error("Haven't covered a case yet:".append(torepr(expr)))
+  end
+end
+
+fun interp(expr :: ExprC) -> ValueC:
+  cases (Result) interp-full(expr, mt-env, mt-sto):
+    | v-x-s (value, store) => value
+  end
+end
+
+check:
+  interp(NumC(5)) is NumV(5)
+end
