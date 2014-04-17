@@ -89,6 +89,17 @@ end
 mt-env = []
 xtnd-env = link
 
+# Helper function to generate stateful counters for store
+fun mk-counter():
+  var ctr = 0
+  fun():
+    ctr := ctr + 1
+    ctr
+  end
+end
+
+new-loc = mk-counter()
+
 data FieldV:
   | fieldV (name :: String, value :: ValueC)
 end
